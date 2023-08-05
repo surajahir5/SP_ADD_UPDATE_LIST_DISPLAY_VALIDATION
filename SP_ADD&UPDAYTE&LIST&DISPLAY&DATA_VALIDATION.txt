@@ -1,0 +1,261 @@
+USE [DB_Mahindra_MIBS_DEV]   //DATABASE NAME
+GO
+/****** Object:  StoredProcedure [Mst].[spr_Group_Save]    Script Date: 8/3/2023 12:46:40 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- [dbo].[spr_Group_Save]null,"Cycle-Sep-2022","01-09-2022","01-09-2022","09-2022","4512","save","N","Y"
+CREATE/ALTER PROCEDURE [Mst].[spr_Group_Save] // SP NAME
+@vGroupID INT,
+@vGroupCode varchar(100),
+@vGroupName varchar(100),
+@vIsEdit varchar(1),
+@vStatus BIT,
+@vCurrUserId VARCHAR(50)
+AS
+BEGIN
+
+	--DECLARE @mCycleId INT
+
+	SET NOCOUNT ON;
+	 SET DATEFORMAT dmy
+
+	If(@vIsEdit = 'N')
+	BEGIN 
+		INSERT INTO Mst.tbl_Group
+		(
+			GroupCode,
+			GroupName,			
+			IsActive,
+			CreatedBy,
+			CreatedOn
+		)
+		VALUES  
+		(
+			ISNULL(@vGroupCode,''),		
+			ISNULL(@vGroupName,''),		
+			ISNULL(@vStatus,0),		
+			ISNULL(@vCurrUserId,''),
+			GETDATE()
+		)
+		--IF @@ROWCOUNT > 0
+		--BEGIN
+
+		--	SET @vGroupID = SCOPE_IDENTITY()
+
+		--	INSERT INTO Mst.tbl_Cycle_Task
+		--	(
+		--		CycleId, TaskId, TaskStatus, TaskStatusDesc, CreatedBy, CreatedOn, DependentOn, ImpactOn
+		--	)
+		--	SELECT @mCycleId, TaskId , 0, 'Pending', @vCurrUserId, GETDATE(), DependentOn, ImpactOn
+		--	FROM Mst.tbl_Task
+		--	WHERE IsActive = 1
+
+		--END
+	END 
+	ELSE
+		BEGIN 
+		UPDATE A
+		SET A.GroupCode = ISNULL(@vGroupCode,''),
+			A.GroupName = ISNULL (@vGroupName,''),				
+			A.IsActive = ISNULL(@vStatus,0),	
+			A.LModBy = ISNULL(@vCurrUserId,''),
+			A.LModOn = GETDATE(),
+			A.CreatedBy=ISNULL(@vCurrUserId,'')
+		FROM Mst.tbl_Group A
+		WHERE A.GroupId = @vGroupID
+		END 
+END 
+
+---------------------------SP SAVE VALIDATION ----------------------------------------------------
+
+USE [DB_Mahindra_MIBS_DEV]
+GO
+/****** Object:  StoredProcedure [Mst].[spr_Sector_Validate]    Script Date: 8/4/2023 2:54:22 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+--[Mst].[spr_Sector_Validate]'','Y','',''
+ALTER PROCEDURE [Mst].[spr_Sector_Validate]
+	@vSectorId NUMERIC(18,0),
+	@vIsEdit varchar(2),
+	@vSectorCode varchar(20),
+	@vSectorName varchar(20)
+	
+AS
+BEGIN
+	
+	IF(@vIsEdit = 'N')   // INSERT 
+	BEGIN
+		IF EXISTS
+		( 
+			SELECT *
+			FROM  Mst.tbl_Sector
+			WHERE SectorId=@vSectorId OR SectorCode = @vSectorCode 
+			--AND SectorName=@vSectorName   // ADD MORE COLUMN NAME
+		)	
+		BEGIN
+			SELECT ReturnMsg = 'Another Sector is already Exits.'      // ReturnMsg PASSING MSG
+			RETURN
+		END
+	END
+	ELSE 	// ITS MEAN UPDATE
+		BEGIN
+		IF EXISTS
+		( 
+			SELECT *
+			FROM  Mst.tbl_Sector
+			WHERE SectorCode = @vSectorCode  AND SectorId <>  @vSectorId
+			--AND SectorName=@vSectorName  // ADD MORE COLUMN NAME
+		)	 
+		BEGIN
+			SELECT ReturnMsg = 'Another Sector is already Exits'
+			RETURN
+		END
+
+	END
+		SELECT  '#SUCCESS#' AS ReturnMsg
+END
+
+----------------------------------------SP GETBYID AND DISPLAY--------------------------------------
+
+USE [DB_Mahindra_MIBS_DEV]
+GO
+/****** Object:  StoredProcedure [Mst].[spr_Location_GetById]    Script Date: 8/4/2023 11:27:57 AM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE/ALTER PROCEDURE [Mst].[spr_Location_GetById]
+	 @vLocationId INT
+AS
+BEGIN 
+ 
+
+	Select A.LocationId, A.LocationCode ,A.LocationName, A.IsActive AS [Status], 
+			StatusText = CASE WHEN A.IsActive = 1 THEN 'Active' ElSE 'InActive' END,A.IsRentAppl AS [Rent], RentText = CASE WHEN A.IsRentAppl=1 THEN 'Active' ELSE 'InActive' END, A.CreatedBy							
+			FROM Mst.tbl_Location A
+			WHERE A.LocationId = @vLocationId 
+END
+
+----------------------------------------SP GETBYLIST-AND SEARCH BY -------------------------------------------
+
+USE [DB_Mahindra_MIBS_DEV]
+GO
+/****** Object:  StoredProcedure [Mst].[spr_Get_Group_View]    Script Date: 8/4/2023 11:15:16 AM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+-- execute [Docs].[spr_Get_RM_Map_Temp_Data_List] '0011',1,10,'A.BATCHID','desc','<ArrayOfGridSearchParam xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><GridSearchParam><SearchCol>A.BATCHID</SearchCol><SearchType>Equal</SearchType></GridSearchParam></ArrayOfGridSearchParam>','10','Y'
+ALTER PROCEDURE [Mst].[spr_Get_Group_View]
+@vCurrUserId VARCHAR(20),
+	
+	--View Paramaters
+	@vStartRec INT,
+	@vEndRec INT,
+	@vSortCol VARCHAR(100),
+	@vSortOrder VARCHAR(5),
+	@vSearchParamList VARCHAR(MAX),
+	@vRecordPerPage INT,
+	@vRequireRowCount varchar(1),
+	
+	--Debug Parameters
+	@vDebug varchar(1) = 'N'
+AS
+BEGIN
+	-- SET NOCOUNT ON added to prevent extra result sets from
+	-- interfering with SELECT statements.
+	SET NOCOUNT ON;
+
+    --[Start] Don't touch below statement
+	DECLARE @Query VARCHAR(MAX)
+	DECLARE @Condition VARCHAR(MAX)
+	DECLARE @DateRange AS TABLE(ID int,Val varchar(100))
+	DECLARE @FromDT AS VARCHAR(20)
+	DECLARE @TODT AS VARCHAR(20)
+	DECLARE @SearchFrom AS VARCHAR(20)
+	DECLARE @SearchTo AS VARCHAR(20)
+	--[End] Don't touch below statement
+	
+-------------------------
+
+	--[Start] Build your query here
+	-- Note - #RowNo# field is mandatory in below query. #RowNo# is used for pagination purpose.
+	SET @Query = ' Select  A.GroupId,
+						   A.GroupCode,
+						    A.GroupName,
+							CASE WHEN A.IsActive = 1 THEN ''Active'' ELSE ''InActive'' END AS StatusTxt
+							from Mst.tbl_Group A'
+							   
+
+---------------------------------------------------------
+	
+	--[Start] Query Condition
+	
+	--[Start] Do not touch this part
+	DECLARE @RowID INT
+	DECLARE @RowCount INT
+	DECLARE @SearchCol VARCHAR(100)
+	DECLARE @SearchType VARCHAR(10)
+	DECLARE @SearchVal VARCHAR(1000)
+	DECLARE @SearchParam AS TABLE
+	(
+		RowID INT,
+		SearchCol VARCHAR(100),
+		SearchType VARCHAR(10),
+		SearchVal VARCHAR(1000)
+	)
+
+	INSERT INTO @SearchParam
+	EXECUTE [Syst].[GetSearchParamList] @vSearchParamList
+	
+	SET @Condition = ''
+	--[End] Do not touch this part
+	
+	--[Start] Build your condition here
+	--Note if Above query has where condition then below "case when else part" will be a "blank string" otherwise it will contain "WHERE" string
+	IF EXISTS(SELECT * FROM @SearchParam)
+	BEGIN		
+			SET @RowID = 1
+			SELECT @RowCount = COUNT(*) FROM @SearchParam
+		
+			WHILE @RowID <= @RowCount
+			BEGIN
+				SELECT @SearchCol = A.SearchCol, @SearchVal = A.SearchVal, @SearchType = A.SearchType
+				FROM @SearchParam A
+				WHERE A.RowID = @RowID
+				
+				IF @SearchType = 'contains'
+				BEGIN
+					SET @Condition += CASE WHEN @Condition != '' THEN ' AND ' ELSE ' WHERE ' END + 
+										@SearchCol + ' LIKE ''%' + @SearchVal + '%'''
+				END
+				ELSE
+				BEGIN
+					SET @Condition += CASE WHEN @Condition != '' THEN ' AND ' ELSE ' WHERE ' END + 
+										@SearchCol + ' = ''' + @SearchVal + ''''
+				END
+			
+				SET @RowID = @RowID + 1
+			END
+	END
+	--[End] Build your condition here	
+	
+	--[End] Query Condition
+	
+	--Don't touch below statement
+	
+	PRINT(@Condition)
+	EXECUTE Syst.ExecuteQuery @vStartRec, @vEndRec, @vSortCol, @vSortOrder, @Query, @Condition, @vRequireRowCount, @vRecordPerPage, @vDebug
+	
+END
+
+----------------------------------------------
+
